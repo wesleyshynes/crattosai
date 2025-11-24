@@ -1,60 +1,201 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
-function App() {
-  const [monster1Health, setMonster1Health] = useState(100)
-  const [monster2Health, setMonster2Health] = useState(100)
+const generateNewGameState = () => ({
+  status: 'selectActions' as 'selectActions' | 'resolveActions',
+  monster1: {
+    health: 100,
+    position: -1,
+    selectedActions: [] as string[]
+  },
+  monster2: {
+    health: 100,
+    position: 1,
+    selectedActions: [] as string[]
+  }
+})
 
-  const [monster1Position, setMonster1Position] = useState(-1)
-  const [monster2Position, setMonster2Position] = useState(1)
+function App() {
+
+  const [gameState, setGameState] = useState(generateNewGameState())
 
   const positions = [-2, -1, 0, 1, 2]
+
+  useEffect(() => {
+
+    // if in resolveActions state, resolve actions
+    if (gameState.status === 'resolveActions') {
+      const actionTimeout = setTimeout(() => {
+        resolveAction()
+      }, 1000) // 1 second delay between action resolutions
+      return () => clearTimeout(actionTimeout)
+    }
+
+    return () => {}
+  }, [gameState])
+
+  const dealMonsterDamage = (monster: 'monster1' | 'monster2', damage: number, prevState: any) => {
+    const newHealth = Math.max(prevState[monster].health - damage, 0)
+    return {
+      ...prevState,
+      [monster]: {
+        ...prevState[monster],
+        health: newHealth
+      }
+    }
+
+  }
+
+  const moveMonster = (monster: 'monster1' | 'monster2', direction: 'left' | 'right', prevState: any) => {
+    const currentPosition = prevState[monster].position
+    let newPosition = currentPosition
+    if (direction === 'left') {
+      newPosition = Math.max(currentPosition - 1, -2)
+    } else {
+      newPosition = Math.min(currentPosition + 1, 2)
+    }
+    return {
+      ...prevState,
+      [monster]: {
+        ...prevState[monster],
+        position: newPosition
+      }
+    }
+  }
+
+  const resolveAction = () => {
+    // are there actions to resolve?
+    if (gameState.status !== 'resolveActions') return
+
+    // make sure each monster has an action to resolve
+    const monster1Action = gameState.monster1.selectedActions.shift()
+    const monster2Action = gameState.monster2.selectedActions.shift()
+
+    if (!monster1Action && !monster2Action) {
+      // no actions to resolve, back to selecting actions
+      setGameState(prevState => ({
+        ...prevState,
+        status: 'selectActions'
+      }))
+      return
+    }
+
+    let newGameState = { ...gameState }
+
+    // resolve movements first
+    if (monster1Action === 'moveLeft' || monster1Action === 'moveRight') {
+      newGameState = moveMonster('monster1', monster1Action === 'moveLeft' ? 'left' : 'right', newGameState)
+    }
+    if (monster2Action === 'moveLeft' || monster2Action === 'moveRight') {
+      newGameState = moveMonster('monster2', monster2Action === 'moveLeft' ? 'left' : 'right', newGameState)
+    }
+
+    // resolve attacks
+    if (monster1Action === 'attack') {
+      // check if in range
+      if (Math.abs(newGameState.monster1.position - newGameState.monster2.position) <= 1) {
+        newGameState = dealMonsterDamage('monster2', 20, newGameState)
+      }
+    }
+    if (monster2Action === 'attack') {
+      // check if in range
+      if (Math.abs(newGameState.monster2.position - newGameState.monster1.position) <= 1) {
+        newGameState = dealMonsterDamage('monster1', 20, newGameState)
+      }
+    }
+
+    setGameState(newGameState)
+  }
+
+  const resetGame = () => {
+    setGameState(generateNewGameState())
+  }
+
+  const queueAction = (monster: 'monster1' | 'monster2', action: string) => {
+    setGameState(prevState => {
+      const selectedActions = prevState[monster].selectedActions
+      if (selectedActions.length >= 2) return prevState
+      let actionCount = prevState.monster1.selectedActions.length + prevState.monster2.selectedActions.length
+      return {
+        ...prevState,
+        [monster]: {
+          ...prevState[monster],
+          selectedActions: [...selectedActions, action]
+        },
+        status: actionCount + 1 >= 4 ? 'resolveActions' : prevState.status,
+      }
+    })
+  }
+
+  const unQueueAction = (monster: 'monster1' | 'monster2', selectedActionIndex: number = -1) => {
+    const actionIndex = selectedActionIndex !== -1 ? selectedActionIndex : gameState[monster].selectedActions.length - 1
+    setGameState(prevState => {
+      const selectedActions = prevState[monster].selectedActions
+      return {
+        ...prevState,
+        [monster]: {
+          ...prevState[monster],
+          selectedActions: selectedActions.filter((_, idx) => idx !== actionIndex)
+        }
+      }
+    })
+  }
 
   return (
     <>
       <div className="container mx-auto p-4">
 
+        {/* Monsters Status */}
         <div className="row">
           <div className="col">
             <div className="grid grid-cols-2 gap-4">
 
-              <div>
-                <h2 className="text-2xl font-semibold mb-2">Monster 1</h2>
-                {/* health bar */}
-                <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-                  <div className="bg-red-500 h-4 rounded-full transition-width duration-300" style={{
-                    width: `${monster1Health}%`
-                  }}></div>
-                </div>
-              </div>
+              {(['monster1', 'monster2'] as ['monster1', 'monster2']).map((monster: 'monster1' | 'monster2', idx: number) => {
+                // display the Name, healthbar and actions queue
+                return (
+                  <div key={monster}>
+                    <h2 className="text-2xl font-semibold mb-2">Monster {idx + 1}</h2>
+                    {/* health bar */}
+                    <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
+                      <div className="bg-red-500 h-4 rounded-full transition-width duration-300" style={{
+                        width: `${gameState[monster].health}%`
+                      }}></div>
+                    </div>
 
-              <div>
-                <h2 className="text-2xl font-semibold mb-2">Monster 2</h2>
-                {/* health bar */}
-                <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-                  <div className="bg-red-500 h-4 rounded-full transition-width duration-300" style={{
-                    width: `${monster2Health}%`
-                  }}></div>
-                </div>
-              </div>
+                    {/* 2 boxes for selected actions */}
+                    <div className={`flex space-x-2 mb-4${idx === 1 ? ' ml-auto justify-end' : ''}`}>
+                      {['', ''].map((action, index) => {
+                        const actionSelected = gameState[monster].selectedActions[index] ? gameState[monster].selectedActions[index] : 'none'
+                        return (
+                          <div
+                            key={`${index}-${actionSelected}`}
+                            className={`w-16 h-8 ${gameState[monster].selectedActions[index] ? 'bg-blue-500' : 'bg-gray-300'} rounded flex items-center justify-center`} />
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                )
+              })}
 
             </div>
           </div>
         </div>
 
+        {/* Game Grid */}
         <div className="row">
           <div className="col">
             <div className="grid grid-cols-5 gap-4">
               {positions.map((pos: number, idx: number) => (
                 <div
                   key={idx}
-                  className="w-16 h-16 border-2 border-gray-300 flex items-center justify-center"
+                  className="w-full h-16 border-2 border-gray-300 flex items-center justify-center"
                 >
 
-                  {monster1Position === pos && (
+                  {gameState.monster1.position === pos && (
                     <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto">M1</div>
                   )}
-                  {monster2Position === pos && (
+                  {gameState.monster2.position === pos && (
                     <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center mx-auto">M2</div>
                   )}
 
@@ -64,90 +205,77 @@ function App() {
           </div>
         </div>
 
+        {/* Monster Buttons */}
         <div className="row">
           <div className="col">
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex justify-start gap-2">
-                {/* monster 1 controls */}
-                <button
-                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  onClick={() => {
-                    let newHealth = monster2Health - 10
-                    if (newHealth < 0) newHealth = 0
-                    setMonster2Health(newHealth)
-                  }}>
-                  Attack
-                </button>
 
-                <button
-                  className="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  onClick={() => {
-                    let newPosition = monster1Position - 1
-                    if (newPosition < -2) newPosition = -2
-                    setMonster1Position(newPosition)
-                  }}>
-                  Move Left
-                </button>
+              {(['monster1', 'monster2'] as ['monster1', 'monster2']).map((monster: 'monster1' | 'monster2', idx: number) => {
+                const disableButton = gameState.status !== 'selectActions' || gameState[monster].selectedActions.length >= 2
+                const disableUndo = gameState.status !== 'selectActions' || gameState[monster].selectedActions.length === 0
+                return (
 
-                <button
-                  className="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  onClick={() => {
-                    let newPosition = monster1Position + 1
-                    if (newPosition > 2) newPosition = 2
-                    setMonster1Position(newPosition)
-                  }}>
-                  Move Right
-                </button>
+                  <div
+                    key={`control-${idx}`}
+                    className={`flex gap-2 ${idx === 1 ? 'justify-end' : 'justify-start'} flex-wrap`}
+                  >
+                    {/* monster controls */}
+                    <button
+                      className={`mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${disableButton ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={disableButton}
+                      onClick={() => {
+                        queueAction(monster, 'attack')
+                      }}>
+                      Attack
+                    </button>
 
-              </div>
+                    <button
+                      className={`mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 ${disableButton ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={disableButton}
+                      onClick={() => {
+                        queueAction(monster, 'moveLeft')
+                      }}>
+                      Move Left
+                    </button>
 
-              <div className="flex justify-end gap-2">
-                {/* monster 2 controls */}
-                <button
-                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  onClick={() => {
-                    let newHealth = monster1Health - 10
-                    if (newHealth < 0) newHealth = 0
-                    setMonster1Health(newHealth)
-                  }}>
-                  Attack
-                </button>
+                    <button
+                      className={`mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 ${disableButton ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={disableButton}
+                      onClick={() => {
+                        queueAction(monster, 'moveRight')
+                      }}>
+                      Move Right
+                    </button>
 
-                <button
-                  className="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  onClick={() => {
-                    let newPosition = monster2Position - 1
-                    if (newPosition < -2) newPosition = -2
-                    setMonster2Position(newPosition)
-                  }}>
-                  Move Left
-                </button>
+                    {/* undo button */}
+                    <button
+                      className={`mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 ${disableUndo ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={disableUndo}
+                      onClick={() => {
+                        unQueueAction(monster)
+                      }}>
+                      Undo
+                    </button>
 
-                <button
-                  className="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  onClick={() => {
-                    let newPosition = monster2Position + 1
-                    if (newPosition > 2) newPosition = 2
-                    setMonster2Position(newPosition)
-                  }}>
-                  Move Right
-                </button>
-              </div>
+                  </div>
+                )
+              })}
 
             </div>
           </div>
         </div>
+
+        {/* Reset Buttons */}
         <div className="row">
           <div className="col">
-            {monster1Health === 0 && <h2 className="text-2xl font-bold text-red-600 mt-4">Monster 2 Wins!</h2>}
-            {monster2Health === 0 && <h2 className="text-2xl font-bold text-red-600 mt-4">Monster 1 Wins!</h2>}
+            {gameState.monster1.health === 0 && <h2 className="text-2xl font-bold text-red-600 mt-4">Monster 2 Wins!</h2>}
+            {gameState.monster2.health === 0 && <h2 className="text-2xl font-bold text-red-600 mt-4">Monster 1 Wins!</h2>}
             {/* reset health button */}
-            {(monster1Health === 0 || monster2Health === 0) && (
+            {(gameState.monster1.health === 0 || gameState.monster2.health === 0) && (
               <button
                 className="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
                 onClick={() => {
-                  setMonster1Health(100)
-                  setMonster2Health(100)
+                  resetGame()
                 }}>
                 Reset Health
               </button>
