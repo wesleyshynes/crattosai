@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 
+const generateBlankMonsterState = () => ({
+  health: 100,
+  position: 0,
+  selectedActions: [] as string[],
+  currentAction: '' as string
+})
+
 const generateNewGameState = () => ({
-  status: 'selectActions' as 'selectActions' | 'resolveActions',
+  status: 'selectActions' as 'selectActions' | 'resolveActions' | 'resolvingActions',
   monster1: {
-    health: 100,
-    position: -1,
-    selectedActions: [] as string[]
+    ...generateBlankMonsterState(),
+    position: -1
   },
   monster2: {
-    health: 100,
-    position: 1,
-    selectedActions: [] as string[]
+    ...generateBlankMonsterState(),
+    position: 1
   }
 })
 
@@ -22,7 +27,7 @@ function App() {
   const positions = [-2, -1, 0, 1, 2]
 
   useEffect(() => {
-
+    console.log('USE EFFECT: Game State Updated:', gameState)
     // if in resolveActions state, resolve actions
     if (gameState.status === 'resolveActions') {
       const actionTimeout = setTimeout(() => {
@@ -31,7 +36,7 @@ function App() {
       return () => clearTimeout(actionTimeout)
     }
 
-    return () => {}
+    return () => { }
   }, [gameState])
 
   const dealMonsterDamage = (monster: 'monster1' | 'monster2', damage: number, prevState: any) => {
@@ -63,7 +68,7 @@ function App() {
     }
   }
 
-  const resolveAction = () => {
+  const resolveAction = async () => {
     // are there actions to resolve?
     if (gameState.status !== 'resolveActions') return
 
@@ -75,20 +80,45 @@ function App() {
       // no actions to resolve, back to selecting actions
       setGameState(prevState => ({
         ...prevState,
-        status: 'selectActions'
+        status: 'selectActions',
+        monster1: {
+          ...prevState.monster1,
+          currentAction: '' as string
+        },
+        monster2: {
+          ...prevState.monster2,
+          currentAction: '' as string
+        }
       }))
       return
     }
 
     let newGameState = { ...gameState }
+    newGameState.status = 'resolvingActions'
+
+    newGameState.monster1.currentAction = ''
+    newGameState.monster2.currentAction = ''
 
     // resolve movements first
     if (monster1Action === 'moveLeft' || monster1Action === 'moveRight') {
       newGameState = moveMonster('monster1', monster1Action === 'moveLeft' ? 'left' : 'right', newGameState)
+      newGameState.monster1.currentAction = monster1Action
     }
     if (monster2Action === 'moveLeft' || monster2Action === 'moveRight') {
       newGameState = moveMonster('monster2', monster2Action === 'moveLeft' ? 'left' : 'right', newGameState)
+      newGameState.monster2.currentAction = monster2Action
     }
+
+    // set state to resolving actions to show movement first
+    if (monster1Action === 'moveLeft' || monster1Action === 'moveRight' || monster2Action === 'moveLeft' || monster2Action === 'moveRight') {
+      setGameState({ ...newGameState })
+      // wait a moment to show movement before resolving attacks
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+    }
+
+    newGameState.monster1.currentAction = ''
+    newGameState.monster2.currentAction = ''
 
     // resolve attacks
     if (monster1Action === 'attack') {
@@ -96,15 +126,29 @@ function App() {
       if (Math.abs(newGameState.monster1.position - newGameState.monster2.position) <= 1) {
         newGameState = dealMonsterDamage('monster2', 20, newGameState)
       }
+      newGameState.monster1.currentAction = 'attack'
     }
     if (monster2Action === 'attack') {
       // check if in range
       if (Math.abs(newGameState.monster2.position - newGameState.monster1.position) <= 1) {
         newGameState = dealMonsterDamage('monster1', 20, newGameState)
       }
+      newGameState.monster2.currentAction = 'attack'
     }
 
-    setGameState(newGameState)
+    if (monster1Action === 'attack' || monster2Action === 'attack') {
+      setGameState({ ...newGameState })
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+
+
+    newGameState.monster1.currentAction = ''
+    newGameState.monster2.currentAction = ''
+
+    newGameState.status = 'resolveActions'
+
+    // update state
+    setGameState({ ...newGameState })
   }
 
   const resetGame = () => {
@@ -154,7 +198,7 @@ function App() {
                 // display the Name, healthbar and actions queue
                 return (
                   <div key={monster}>
-                    <h2 className="text-2xl font-semibold mb-2">Monster {idx + 1}</h2>
+                    <h2 className="text-2xl font-semibold mb-2">Monster {idx + 1} {gameState[monster].currentAction}</h2>
                     {/* health bar */}
                     <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
                       <div className="bg-red-500 h-4 rounded-full transition-width duration-300" style={{
